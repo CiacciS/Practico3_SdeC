@@ -705,7 +705,7 @@ make gdb            # gdb -x scripts/conectar.gdb
 ```
 
 [`scripts/conectar.gdb`](scripts/conectar.gdb) carga `build/simbolos.gdb`, pone
-`break UefiMain` y hace `target remote :1234`. En ese momento **QEMU se congela**:
+`break *UefiMain` y hace `target remote :1234`. En ese momento **QEMU se congela**:
 GDB lo detuvo donde estuviera (en algún lugar del firmware, sin símbolos).
 
 ```
@@ -718,25 +718,73 @@ En la **terminal 1**, en la Shell:
 FS0:\> HelloWorld.efi
 ```
 
-GDB tiene que frenar en `UefiMain`, con el dashboard mostrando la línea
-`ConOut = SystemTable->ConOut;`.
+GDB tiene que frenar en **`UefiMain+0`**, la primera instrucción de la función (en el
+dashboard, la línea 20, la llave `{`). En *Stack* tiene que verse la cadena
+`UefiMain` ← `ProcessModuleEntryPointList` ← `_ModuleEntryPoint` ← (direcciones del
+firmware, sin símbolos).
+
+El `*` de `break *UefiMain` significa "en esta dirección exacta". Sin el `*`, GDB
+intenta saltear el prólogo y frenar en la primera línea del cuerpo, pero el resultado
+depende de la versión de GDB. Con el `*` frenamos siempre **antes del prólogo**, y eso
+nos deja ver la llamada en dos tiempos: cómo dejó todo el `call` (5.6) y qué hace el
+prólogo (5.7).
 
 📸 **`P5-04-breakpoint-uefimain`**
+
+> **El panel *Variables* muestra basura, y es lo esperado.** GDB calcula los
+> argumentos como `rbp+0x10` y `rbp+0x18`, pero el prólogo (`push %rbp; mov %rsp,%rbp`)
+> todavía no se ejecutó: `rbp` sigue siendo **el del llamador**. Por ejemplo,
+> `ConOut->OutputString` aparece apuntando a `<_ModuleEntryPoint+91>`, que en realidad
+> es una dirección de retorno del marco de arriba. En la 5.7 se corrige solo.
 
 > **Si no frena:** la app se cargó en otra dirección. Revisá con
 > `grep "Loading driver" build/debug.log | tail -1` (el log se reescribe en cada
 > arranque) y compará con `build/simbolos.gdb`. Si cambió, salí de los dos lados,
 > `make simbolos` y repetí. Para que no cambie, hay que arrancar QEMU siempre con las
-> mismas opciones (por eso `-m 256M` está fijo en el `Makefile`).
+> mismas opciones y hacer siempre los mismos pasos en la Shell.
 >
 > **Detalle:** el breakpoint se pone *antes* de que la app esté en memoria. Funciona
 > porque QEMU, en modo emulación (TCG, sin `-enable-kvm`), implementa los
 > breakpoints sin escribir en la memoria del invitado. Con KVM habría que usar
-> `hbreak UefiMain`.
+> `hbreak *UefiMain`.
 
-### 5.6 Los argumentos llegaron por RCX y RDX
+### 5.6 Antes del prólogo: lo que dejó el `call`
 
 ```
+>>> info registers rcx rdx rsp rbp
+>>> x/gx $rsp
+>>> info symbol *(long *)$rsp
+>>> x/4gx $rsp+8
+>>> disassemble /s ProcessModuleEntryPointList
+```
+
+- **`rcx` y `rdx`** ya tienen los dos argumentos, `ImageHandle` y `SystemTable`: es la
+  convención **Microsoft x64**. En System V (TP #2) estarían en `rdi` y `rsi`.
+- **`[rsp]`** es la **dirección de retorno** que empujó el `call`, igual que en el
+  TP #2. `info symbol` la ubica en `ProcessModuleEntryPointList+36`, la función de
+  `AutoGen.c` que llama a `UefiMain`, dentro de nuestra imagen (en nuestra corrida,
+  `0xdfeb209 = base + 0x1209`).
+- **`rsp+8` a `rsp+0x28`** son los 32 bytes del **shadow space**. Los reservó el
+  llamador (en el desensamblado de `ProcessModuleEntryPointList` se ve el
+  `sub $0x20,%rsp` antes del `call UefiMain`) pero **todavía nadie escribió ahí**: lo
+  que muestra `x/4gx` es lo que hubiera en esa memoria.
+- `ProcessModuleEntryPointList` reserva **exactamente 32 bytes**: no tiene variables
+  locales, solo el shadow space que la convención le exige para llamar.
+
+📸 **`P5-05-antes-del-prologo`**
+
+### 5.7 Después del prólogo: el shadow space y la System Table
+
+```
+>>> next
+```
+
+`next` ejecuta el prólogo entero y frena en la línea 24
+(`ConOut = SystemTable->ConOut;`), todavía sin ejecutarla. Ahora `rbp` es el de
+`UefiMain`, y el panel *Variables* muestra valores con sentido.
+
+```
+>>> x/2gx $rbp+0x10
 >>> info registers rcx rdx
 >>> p ImageHandle
 >>> p SystemTable
@@ -744,48 +792,20 @@ GDB tiene que frenar en `UefiMain`, con el dashboard mostrando la línea
 >>> x/8cb SystemTable
 >>> x/sh SystemTable->FirmwareVendor
 >>> p/x SystemTable->FirmwareRevision
->>> p SystemTable->ConOut
 ```
 
-- `rcx` tiene que ser igual a `ImageHandle`, y `rdx` igual a `SystemTable`.
+- **`x/2gx $rbp+0x10`** muestra los mismos valores que `rcx` y `rdx`. El prólogo
+  ejecutó `mov %rcx,0x10(%rbp)` y `mov %rdx,0x18(%rbp)`: copió los argumentos en el
+  **shadow space**, el mismo que en la 5.6 estaba vacío. Como `rbp = rsp_de_la_5.6 − 8`
+  (por el `push %rbp`), `rbp+0x10` es exactamente `rsp+8` de antes. En System V esto no
+  existe: allá los argumentos se guardan **debajo** de `rbp`, como locales.
 - La firma de la System Table es `0x5453595320494249`, que en memoria se lee
   `I B I   S Y S T` (`EFI_SYSTEM_TABLE_SIGNATURE`). Así sabemos que el puntero
   realmente apunta a una System Table.
 - `FirmwareVendor` es una cadena `CHAR16`: por eso `x/sh` (*s*tring de *h*alfwords)
   y no `x/s`. Tiene que mostrar `u"EDK II"`.
 
-📸 **`P5-05-system-table`**
-
-### 5.7 El shadow space y quién nos llamó
-
-```
->>> x/2gx $rbp+0x10
->>> x/gx $rbp+8
->>> info symbol *(long *)($rbp+8)
->>> bt
-```
-
-- `x/2gx $rbp+0x10`: los mismos valores que `rcx` y `rdx`. El prólogo los copió al
-  **shadow space**, los 32 bytes que el llamador reservó arriba de la dirección de
-  retorno. En System V esto no existe: allá los argumentos se guardaban **debajo** de
-  `rbp`, como locales.
-- `$rbp+8`: la **dirección de retorno**, como en el TP #2. `info symbol` muestra que
-  vuelve a `ProcessModuleEntryPointList`: es la función de `AutoGen.c` que llama a
-  `UefiMain`.
-- `bt`: `UefiMain` ← `ProcessModuleEntryPointList` ← `_ModuleEntryPoint` ← (el
-  firmware, sin símbolos). Es la cadena que describimos en la Parte 2.
-
-Para ver el lado del llamador:
-
-```
->>> disassemble /s ProcessModuleEntryPointList
-```
-
-Hace `sub $0x20,%rsp` antes del `call UefiMain`: reserva **exactamente 32 bytes**, que
-son los cuatro slots del shadow space. No tiene variables locales, así que no reserva
-nada más.
-
-📸 **`P5-06-shadow-space-y-backtrace`**
+📸 **`P5-06-shadow-space-y-system-table`**
 
 ### 5.8 Justo antes de llamar a `OutputString`
 
@@ -842,7 +862,7 @@ La Shell vuelve al prompt. Para terminar: `quit` en GDB y `Ctrl+A X` en QEMU.
 |---|---|
 | `target remote :1234` | conectarse al stub de QEMU |
 | `add-symbol-file F.debug ADDR -s .data ADDR2` | cargar símbolos reubicados |
-| `break UefiMain` / `hbreak UefiMain` | breakpoint de software / de hardware |
+| `break *UefiMain` / `hbreak *UefiMain` | breakpoint de software / de hardware en la primera instrucción |
 | `continue`, `next`, `step`, `nexti`, `stepi`, `finish` | igual que en el TP #2 |
 | `until *ADDR` | correr hasta una dirección |
 | `x/sh ADDR` | cadena `CHAR16` |

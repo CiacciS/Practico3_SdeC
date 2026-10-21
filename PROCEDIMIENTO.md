@@ -148,25 +148,37 @@ Los marcadores aparecen en orden creciente: `SecCoreStartupWithStack` (SEC), `Lo
 
 ![Símbolos](capturas/P5-03-simbolos.jpg)
 
-> ✏️ Cuenta a mano: `base + 0x1000 = ...`, `base + 0x5000 = ...`, y control cruzado `EntryPoint − base = 0x3658 = _ModuleEntryPoint`.
+La línea del log fue `Loading driver at 0x0000DFEA000 EntryPoint=0x0000DFED805 HelloWorld.efi`.
+
+| | Cuenta | Resultado |
+|---|---|---|
+| `.text` | `0xDFEA000 + 0x1000` | `0xDFEB000` |
+| `.data` | `0xDFEA000 + 0x5000` | `0xDFEF000` |
+| control cruzado | `EntryPoint − base = 0xDFED805 − 0xDFEA000` | `0x3805` |
+
+`0x3805` es justo la dirección de `_ModuleEntryPoint` en el `.debug`, así que la base es correcta. También confirma que el firmware entra a la app por `_ModuleEntryPoint` y no por `UefiMain`, que está al principio de `.text`, en el RVA `0x1000`.
 
 ## 5.4 Breakpoint en `UefiMain`
 
 ![Breakpoint](capturas/P5-04-breakpoint-uefimain.jpg)
 
-## 5.5 Los argumentos y la System Table
+GDB frenó en `UefiMain+0` (`0xdfeb000` = base + `0x1000`), en la línea 20, antes del prólogo. El panel *Stack* muestra la cadena de llamadas: `UefiMain` ← `ProcessModuleEntryPointList+36` (`AutoGen.c:185`) ← `_ModuleEntryPoint+91` (`ApplicationEntryPoint.c:58`) ← direcciones del firmware sin símbolos (`0xfb733f0`, `0xe022a18`, …), que son la Shell y el DXE Core que la cargó.
 
-![System Table](capturas/P5-05-system-table.jpg)
+El panel *Variables* muestra valores sin sentido, como `Signature = 8412870648761975624` u `OutputString = 0xdfed860 <_ModuleEntryPoint+91>`. Es porque GDB lee los argumentos en `rbp+0x10` y `rbp+0x18`, pero `rbp` todavía es el del llamador. Ese `0xdfed860` es, de hecho, una dirección de retorno del marco de `_ModuleEntryPoint`.
 
-> ✏️ Valores de `rcx`/`ImageHandle` y `rdx`/`SystemTable`.
+## 5.5 Antes del prólogo: lo que dejó el `call`
 
-La firma `0x5453595320494249` (`IBI SYST`) confirma que `rdx` apunta a una `EFI_SYSTEM_TABLE`, y `FirmwareVendor` es `u"EDK II"`.
+![Antes del prólogo](capturas/P5-05-antes-del-prologo.jpg)
 
-## 5.6 Shadow space y backtrace
+> ✏️ Valores de `rcx`, `rdx`, `rsp`, `[rsp]` y de los 4 slots de `rsp+8`.
 
-![Shadow space](capturas/P5-06-shadow-space-y-backtrace.jpg)
+`rcx` y `rdx` tienen `ImageHandle` y `SystemTable`, como manda la convención Microsoft x64. En `[rsp]` está la dirección de retorno, `ProcessModuleEntryPointList+36`. Arriba de ella están los 32 bytes de shadow space que reservó el llamador con `sub $0x20,%rsp`, todavía sin escribir.
 
-`$rbp+0x10` y `$rbp+0x18` contienen los mismos valores que `rcx` y `rdx`: el prólogo los copió al shadow space que reservó el llamador. La dirección de retorno en `$rbp+8` pertenece a `ProcessModuleEntryPointList`, y el backtrace es `UefiMain` ← `ProcessModuleEntryPointList` ← `_ModuleEntryPoint`.
+## 5.6 Después del prólogo: el shadow space y la System Table
+
+![Shadow space y System Table](capturas/P5-06-shadow-space-y-system-table.jpg)
+
+Después de `next`, `$rbp+0x10` y `$rbp+0x18` contienen los mismos valores que `rcx` y `rdx`: el prólogo copió los argumentos al shadow space, que es la misma memoria que en 5.5 estaba en `rsp+8`. La firma `0x5453595320494249` (`IBI SYST`) confirma que `rdx` apunta a una `EFI_SYSTEM_TABLE`, y `FirmwareVendor` es `u"EDK II"`.
 
 ## 5.7 Antes del `call *%r8`
 
