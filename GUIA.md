@@ -362,6 +362,26 @@ qemu-system-x86_64 -m 256M \
 | `-debugcon file:build/debug.log` | todo lo que OVMF escribe en el puerto `0x402` va a ese archivo |
 | `-m 256M` | memoria **fija**: con la misma configuración, OVMF carga la app siempre en la misma dirección (Parte 5) |
 
+Antes de arrancar QEMU, `make run` copia la UEFI Shell (que se compiló junto con OVMF,
+en `~/edk2/Build/OvmfX64/DEBUG_GCC/X64/Shell.efi`) a **`disco/EFI/BOOT/BOOTX64.EFI`**.
+
+**¿Por qué hace falta?** Es la fase **BDS** en acción. OVMF registra su Shell interna
+como opción de arranque de categoría *aplicación* (`LOAD_OPTION_CATEGORY_APP`, en
+`OvmfPkg/Library/PlatformBootManagerLib/BdsPlatform.c`), y BDS **solo arranca solas las
+opciones de categoría *boot***. Así que BDS prueba nuestro disco, que es la única opción
+*boot*, y busca un cargador en `\EFI\BOOT\BOOTX64.EFI`, que es la ruta por defecto que
+define la especificación UEFI para medios removibles. Si no lo encuentra, se queda en:
+
+```
+BdsDxe: failed to load Boot0002 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Primary,Master,0x0): Not Found
+BdsDxe: No bootable option or device was found.
+BdsDxe: Press any key to enter the Boot Manager Menu.
+```
+
+Con la Shell en esa ruta, el mismo `Boot0002` arranca bien. (Sin la copia, la salida es
+apretar una tecla y elegir **EFI Internal Shell** en el Boot Manager.) En la lección
+00 esto no pasaba porque en 2021 OVMF todavía arrancaba la Shell sin pasar por el menú.
+
 Cuando aparece la Shell, `disco/startup.nsh` ejecuta `fs0:` solo, así que el prompt
 queda en `FS0:\>`.
 

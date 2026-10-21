@@ -26,8 +26,10 @@ APP       ?= HelloWorld
 
 PKG_BUILD := $(EDK2)/Build/HelloPkg/$(TARGET)_$(TOOLCHAIN)/X64
 OVMF_FV   := $(EDK2)/Build/OvmfX64/DEBUG_$(TOOLCHAIN)/FV
+OVMF_X64  := $(EDK2)/Build/OvmfX64/DEBUG_$(TOOLCHAIN)/X64
 DISCO     := disco
 VARS      := build/OVMF_VARS.fd
+BOOTX64   := $(DISCO)/EFI/BOOT/BOOTX64.EFI
 LOG       := build/debug.log
 
 # Carga el entorno de EDK2 en la misma shell en la que corre 'build'.
@@ -63,10 +65,18 @@ $(VARS):
 	mkdir -p build
 	cp $(OVMF_FV)/OVMF_VARS.fd $@
 
-run: $(VARS)
+# La UEFI Shell que se compilo junto con OVMF, en la ruta de arranque por defecto
+# de un medio removible (\EFI\BOOT\BOOTX64.EFI). OVMF registra su Shell interna
+# como opcion de categoria APP y BDS no la arranca sola: arranca solo opciones de
+# categoria BOOT, como este disco. Asi la Shell arranca sin pasar por el menu.
+$(BOOTX64):
+	mkdir -p $(dir $@)
+	cp $(OVMF_X64)/Shell.efi $@
+
+run: $(VARS) $(BOOTX64)
 	$(QEMU)
 
-debug: $(VARS)
+debug: $(VARS) $(BOOTX64)
 	$(QEMU) -s
 
 simbolos:
@@ -78,3 +88,4 @@ gdb:
 clean:
 	rm -rf build
 	rm -f $(DISCO)/*.efi
+	rm -rf $(DISCO)/EFI
