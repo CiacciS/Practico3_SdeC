@@ -1,0 +1,20 @@
+## @file
+# SimplestApp.inf - la aplicacion UEFI mas chica posible (Parte 2)
+##
+
+[Defines]
+  INF_VERSION                    = 1.25
+  BASE_NAME                      = SimplestApp
+  FILE_GUID                      = 1aee6f62-4b69-42ab-b9e2-6eecf693a1cc
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+  SimplestApp.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint

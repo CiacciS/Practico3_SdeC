@@ -1,0 +1,20 @@
+## @file
+# HelloWorld.inf - Hello World usando directamente la System Table (Partes 3 y 5)
+##
+
+[Defines]
+  INF_VERSION                    = 1.25
+  BASE_NAME                      = HelloWorld
+  FILE_GUID                      = 5ef7b165-e27e-4f79-9266-ea68e6c7d62e
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+  HelloWorld.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
