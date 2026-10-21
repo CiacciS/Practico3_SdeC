@@ -618,8 +618,19 @@ está cargado a partir de *tal* dirección". Eso es `add-symbol-file`.
 
 ### 5.2 ¿Dónde quedó cargada la app?
 
-Si en la Parte 3 ya corriste `HelloWorld.efi` con `make run`, el dato ya está en el
-log. Si no, corré `make run`, ejecutá `HelloWorld.efi` y salí con `Ctrl+A X`.
+QEMU **reescribe `build/debug.log` desde cero en cada arranque**, así que el log solo
+tiene lo que pasó en el último. Si en ese arranque no ejecutaste `HelloWorld.efi` (por
+ejemplo, si el último fue el de la Parte 4 con `HelloPrint.efi`), la línea no va a
+estar. Hacé un arranque en el que la corras:
+
+```bash
+make run
+```
+```
+FS0:\> HelloWorld.efi
+```
+
+Salí con `Ctrl+A X` y recién ahí buscá la línea:
 
 ```bash
 grep "Loading driver at" build/debug.log | tail -3
