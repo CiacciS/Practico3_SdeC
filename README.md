@@ -56,7 +56,7 @@ practico-3/
 ├── scripts/
 │   ├── simbolos.sh        calcula dónde quedó cargada la app y arma el add-symbol-file
 │   └── conectar.gdb       carga los símbolos, pone el breakpoint y se conecta a QEMU
-└── disco/                 se monta en QEMU como FS0: (los .efi se copian acá)
+└── disco/                 se monta en QEMU como FS0: (los .efi y la Shell como EFI/BOOT/BOOTX64.EFI)
 ```
 
 | Documento | Para qué sirve |

@@ -73,7 +73,7 @@ make run
 
 ![Shell](capturas/P2-03-shell.jpg)
 
-BDS arrancó la UEFI Shell y `disco/` aparece como `FS0:`. El *device path* que muestra `map` es la forma en que UEFI identifica el dispositivo.
+La primera vez, OVMF se quedó en `BdsDxe: No bootable option or device was found`. La Shell interna está registrada como opción de categoría *aplicación* y BDS solo arranca solas las de categoría *boot*. Por eso probó nuestro disco, y el disco no tenía un cargador en la ruta por defecto `\EFI\BOOT\BOOTX64.EFI`. Lo resolvimos con `make run`, que copia `Shell.efi` a esa ruta. Así BDS arrancó la UEFI Shell desde nuestro disco, y `disco/` aparece como `FS0:`. El *device path* que muestra `map` es la forma en que UEFI identifica el dispositivo.
 
 ## 2.4 Ejecutar `SimplestApp.efi`
 

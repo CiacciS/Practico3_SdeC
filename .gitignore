@@ -3,3 +3,6 @@ build/
 
 # Los .efi se copian al disco con 'make disco'; no se versionan
 disco/*.efi
+
+# La UEFI Shell copiada como cargador por defecto ('make run')
+disco/EFI/
