@@ -887,3 +887,283 @@ Las respuestas van al final de `PROCEDIMIENTO.md`, justificadas con lo que vimos
 7. Seguridad: ¿qué implicaría que una app como esta pudiera ejecutarse sin
    **Secure Boot**? (Pista: corre con los privilegios del firmware, antes que el SO y
    sin ninguna de sus protecciones.)
+
+---
+
+## Parte 7 — El Hello World en hardware real (bare metal)
+
+Hasta acá todo corrió sobre **OVMF dentro de QEMU**, un firmware emulado. En esta parte
+llevamos **los mismos `.efi`, sin recompilar**, a una notebook real: arrancamos la UEFI
+Shell desde un pendrive y ejecutamos la app antes de que exista ningún sistema
+operativo.
+
+Qué se demuestra:
+
+- **El binario es portable entre firmwares.** La app no toca hardware: solo usa la
+  System Table y sus protocolos. Por eso corre igual en OVMF (EDK II) que en el firmware
+  del fabricante (en nuestro caso, **Insyde**, en una Lenovo Legion).
+- **La ruta por defecto de medios removibles.** Es el mismo mecanismo de la Parte 2.4:
+  BDS busca `\EFI\BOOT\BOOTX64.EFI` en el pendrive sin necesitar ninguna entrada
+  `Boot####` en la NVRAM.
+- **Secure Boot.** El firmware solo ejecuta imágenes PE/COFF firmadas con una clave de su
+  base `db`. Nuestra Shell no está firmada, así que hay que desactivarlo (pregunta 7 de
+  la Parte 6).
+
+> **Riesgo para la PC:** prácticamente nulo. La app solo escribe en la consola, y la
+> configuración de Secure Boot se vuelve atrás al final. Lo único a cuidar: BitLocker
+> (7.4) y no usar en la Shell comandos que no estén en esta guía.
+
+### 7.1 Qué hace falta
+
+- **Linux con EDK2 y BaseTools**: Partes 1.1 a 1.5. Puede ser una máquina virtual (lo
+  hicimos en una VM de VirtualBox). **No** hace falta `make ovmf`.
+- Un **pendrive que se pueda borrar entero**.
+- Una **PC con firmware UEFI** (cualquier notebook de los últimos años). No se toca su
+  disco.
+
+```bash
+sudo apt install -y dosfstools     # trae mkfs.vfat, para formatear el pendrive
+```
+
+### 7.2 Compilar las apps y la Shell
+
+Las apps son las mismas de las Partes 2 a 4:
+
+```bash
+cd ~/practico-3
+make app
+ls ~/edk2/Build/HelloPkg/NOOPT_GCC/X64/*.efi
+```
+
+La Shell **no** la sacamos de OVMF ni del link `UDK2018` del documento de la cátedra
+(es de 2018 y en hardware nuevo puede fallar). La compilamos desde `ShellPkg` en
+**`RELEASE`**:
+
+```bash
+cd ~/edk2
+source edksetup.sh
+build -p ShellPkg/ShellPkg.dsc -a X64 -t GCC -b RELEASE
+find ~/edk2/Build/Shell -name Shell.efi
+```
+
+`find` devuelve cuatro rutas. La que usamos es:
+
+```
+~/edk2/Build/Shell/RELEASE_GCC/X64/ShellPkg/Application/Shell/Shell/OUTPUT/Shell.efi
+```
+
+- Las carpetas `DEBUG/` son copias intermedias con información de depuración.
+- La carpeta con el GUID `EA4BB293-...` es una variante de la Shell que `ShellPkg.dsc`
+  compila como ejemplo.
+
+**¿Por qué RELEASE y no la Shell de OVMF?** La de OVMF es DEBUG y escribe su log en el
+puerto de E/S `0x402`. En QEMU ahí está el debugcon (Parte 2.6), pero en una PC real no
+sabemos qué hay en ese puerto. La RELEASE no escribe nada.
+
+### 7.3 Preparar el pendrive
+
+**1. Pasarle el pendrive a la VM.** En VirtualBox: *Dispositivos → USB* y tildar el
+pendrive. Aparece con un nombre genérico (en nuestro caso, *USB Disk 20*). Desde ese
+momento Windows deja de verlo.
+
+**2. Identificarlo.** Este es el paso delicado: si te equivocás de disco, formateás el
+de la VM.
+
+```bash
+lsblk
+```
+
+El pendrive es el disco con su tamaño y con `RM = 1` (removible). En nuestro caso,
+`sdb` de 29,3 GB con la partición `sdb1`. `sda` es el disco de la VM y **no se toca**.
+En lo que sigue, reemplazar `sdb1` por la partición que corresponda.
+
+**3. Formatear en FAT32.** Es el sistema de archivos que todo firmware UEFI está obligado
+a leer. Ubuntu monta el pendrive solo, así que primero hay que desmontarlo:
+
+```bash
+sudo umount /dev/sdb1
+sudo mkfs.vfat -F 32 -n UEFI /dev/sdb1
+```
+
+Si te olvidás del `umount`, `mkfs.vfat` se niega con
+`/dev/sdb1 contains a mounted filesystem`.
+
+> **Ojo al pegar comandos:** van **de a uno**. Si se pegan varias líneas juntas, la
+> terminal puede tomarlas como un único bloque y ejecutar solo la primera.
+
+**4. Copiar los archivos con la estructura de la ruta por defecto:**
+
+```bash
+sudo mount /dev/sdb1 /mnt
+sudo mkdir -p /mnt/EFI/BOOT
+sudo cp ~/edk2/Build/Shell/RELEASE_GCC/X64/ShellPkg/Application/Shell/Shell/OUTPUT/Shell.efi /mnt/EFI/BOOT/BOOTX64.EFI
+sudo cp ~/edk2/Build/HelloPkg/NOOPT_GCC/X64/{HelloWorld,HelloPrint,SimplestApp}.efi /mnt/
+ls -R /mnt
+```
+
+Tiene que quedar así:
+
+```
+/mnt
+├── EFI/BOOT/BOOTX64.EFI     ← la Shell, renombrada
+├── HelloPrint.efi
+├── HelloWorld.efi
+└── SimplestApp.efi
+```
+
+**5. Desmontar y devolver el pendrive:**
+
+```bash
+sync
+sudo umount /mnt
+```
+
+Destildarlo en *Dispositivos → USB* y recién ahí sacarlo.
+
+### 7.4 Antes de tocar el firmware: BitLocker
+
+Si el disco de Windows está cifrado con BitLocker, cambiar Secure Boot hace que, al
+volver, Windows pida la **clave de recuperación**. Hay que fijarse antes, en una
+terminal de Windows **como administrador**:
+
+```
+manage-bde -status C:
+```
+
+- Si dice `Estado de protección: Protección desactivada`, se puede seguir.
+- Si dice `Protección activada`, primero hay que anotar la clave (<https://aka.ms/myrecoverykey>)
+  y suspender la protección: *Panel de control → Cifrado de unidad BitLocker →
+  Suspender protección*.
+
+### 7.5 Desactivar Secure Boot
+
+Para entrar al setup del firmware sin adivinar la tecla, desde la terminal de
+administrador:
+
+```
+shutdown /r /fw /t 0
+```
+
+La PC reinicia directo en el setup. En la Lenovo Legion es gráfico y acepta mouse:
+
+1. **More Settings → Security → Secure Boot → Disabled.**
+2. No tocar *Reset to Setup Mode* ni *Restore Factory Keys*: borran o reemplazan las
+   claves `PK`, `KEK`, `db` y `dbx`.
+3. **F10 → Yes** para guardar y salir.
+
+En otras marcas la opción suele estar en *Security*, *Boot* o *Authentication*. Si
+aparece gris, a veces hay que definir primero una *Supervisor Password*. El modo de
+arranque tiene que ser **UEFI** (no *Legacy* ni *CSM*).
+
+> **Detalle:** en la misma pantalla, *Secure Boot Status* puede seguir
+> diciendo *Enabled*. Ese campo muestra con qué configuración arrancó la máquina esta
+> vez. El cambio se aplica recién después de guardar y reiniciar.
+
+**¿Por qué hay que desactivarlo?** Antes de ejecutar una imagen, el firmware verifica su
+firma Authenticode contra los certificados de la variable `db` (Microsoft y el
+fabricante) y contra la lista negra `dbx`. Nuestra Shell y nuestras apps no tienen
+firma, así que con Secure Boot activo el firmware se niega a ejecutarlas.
+
+### 7.6 Arrancar desde el pendrive
+
+Con el pendrive enchufado, al encender se aprieta repetidamente la tecla del **boot
+menu**. En Lenovo es **F12** (o **Fn+F12**). En otras marcas suele ser F11, F9, F8 o Esc.
+
+Se elige **EFI USB Device**. El menú muestra las opciones de arranque que armó BDS:
+*Windows Boot Manager* (una entrada `Boot####` de la NVRAM), el pendrive (por la ruta
+por defecto `\EFI\BOOT\BOOTX64.EFI`) y PXE por red.
+
+### 7.7 En la UEFI Shell
+
+Al arrancar, la Shell imprime su versión, la del firmware y la tabla de mapeo. En el
+encabezado ya se ve **`UEFI v2.80 (INSYDE Corp., 0x77066035)`**: es el firmware real, no
+OVMF.
+
+**1. Encontrar el pendrive:**
+
+```
+Shell> map -r
+```
+
+Hay dos sistemas de archivos y se distinguen por su *device path*:
+
+| Mapeo | Device path | Qué es |
+|---|---|---|
+| `FS0:` | `PciRoot(0x0)/Pci(0x14,0x0)/USB(...)/HD(1,MBR,...)` | el **pendrive**: USB y tabla MBR, como lo formateamos |
+| `FS1:` | `PciRoot(0x0)/Pci(0x6,0x0)/.../NVMe(...)/HD(1,GPT,...)` | la **partición EFI de Windows**, en el disco NVMe |
+
+Los `BLKx:` son dispositivos de bloque sin sistema de archivos que la Shell pueda leer
+(el disco entero y las otras particiones de Windows).
+
+> **No entrar a `FS1:`**. Desde la Shell se puede modificar el disco de Windows sin
+> confirmación. Tampoco usar `rm`, `del`, `format`, `mv`, `edit`, `bcfg` ni `setvar`.
+
+**2. Ir al pendrive y listar:**
+
+```
+Shell> FS0:
+FS0:\> ls
+```
+
+**3. Ver el firmware y ejecutar el Hello World:**
+
+```
+FS0:\> ver
+UEFI Interactive Shell v2.2
+EDK II
+UEFI v2.80 (INSYDE Corp., 0x77066035)
+FS0:\> HelloWorld.efi
+Hello World!
+FS0:\> echo %lasterror%
+0x0
+```
+
+- `EDK II` es quien compiló **la Shell**. La línea siguiente es **el firmware**: Insyde,
+  que implementa UEFI 2.80. En QEMU, en cambio, el firmware también era EDK II (OVMF).
+- `0x0` es `EFI_SUCCESS`, el valor que devolvió `UefiMain`.
+
+**4. El `HelloPrint`, que además lee la System Table:**
+
+```
+FS0:\> HelloPrint.efi
+Hello World! (via gST)
+Hello World! (via Print)
+Firmware: INSYDE Corp., revision 0x77066035
+UEFI 2.80
+```
+
+Los datos del firmware salen de `gST->FirmwareVendor`, `gST->FirmwareRevision` y
+`gST->Hdr.Revision`. Es la misma System Table que en QEMU, completada ahora por otro
+firmware: el mismo binario la lee sin cambios.
+
+### 7.8 Dejar todo como estaba
+
+1. En la Shell, `reset` (reinicia) y sacar el pendrive.
+2. Entrar al setup (**F2** al encender o `shutdown /r /fw /t 0` desde Windows) y volver
+   a poner **Secure Boot → Enabled**. **F10 → Yes.**
+3. Si se suspendió BitLocker, reanudarlo: *Panel de control → Cifrado de unidad
+   BitLocker → Reanudar protección*.
+
+### 7.9 Si algo no anda
+
+| Síntoma | Causa | Solución |
+|---|---|---|
+| `mkfs.vfat: ... contains a mounted filesystem` | Ubuntu montó el pendrive solo | `sudo umount /dev/sdb1` antes de formatear |
+| `cp: no se puede efectuar 'stat' sobre '.../X64/Shell.efi'` | La Shell de `ShellPkg` no queda directo en `X64/` | Usar la ruta `.../Shell/Shell/OUTPUT/Shell.efi` (7.2) |
+| El pendrive no aparece en el boot menu | No es FAT32 o falta `\EFI\BOOT\BOOTX64.EFI` | Revisar 7.3 |
+| *Secure Boot Violation* / el pendrive no arranca | Secure Boot sigue activo | 7.5 |
+| `'HelloWorld.efi' is not recognized` | Estás en el `FSx:` equivocado | `map -r` y buscar el que tenga `USB(...)` |
+
+### 7.10 Preguntas
+
+Las respuestas van en `PROCEDIMIENTO.md`, junto con las de la Parte 6:
+
+1. ¿Por qué el mismo `HelloWorld.efi` corre sin cambios en OVMF y en el firmware de
+   Insyde? (Pista: PE/COFF reubicable, System Table, protocolos, convención Microsoft
+   x64.)
+2. ¿Cómo encontró BDS la Shell en el pendrive si no había ninguna entrada `Boot####`
+   para él? Relacionalo con la Parte 2.4.
+3. ¿Por qué el firmware rechazaría nuestra Shell con Secure Boot activo, y qué
+   variables de la NVRAM intervienen en esa decisión?
+4. En `map -r`, ¿cómo se distingue el pendrive del disco de Windows solo mirando el
+   *device path*?
