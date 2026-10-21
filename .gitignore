@@ -1,0 +1,5 @@
+# Todo lo generado: copia de OVMF_VARS, debug.log, simbolos.gdb
+build/
+
+# Los .efi se copian al disco con 'make disco'; no se versionan
+disco/*.efi

@@ -1,0 +1,22 @@
+## @file
+# HelloPrint.inf - Hello World con las bibliotecas de EDK2 (Parte 4)
+##
+
+[Defines]
+  INF_VERSION                    = 1.25
+  BASE_NAME                      = HelloPrint
+  FILE_GUID                      = 096b7598-d65f-49aa-994c-dca41b17255b
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+  HelloPrint.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiBootServicesTableLib
+  UefiLib
