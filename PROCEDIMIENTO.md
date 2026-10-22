@@ -196,7 +196,7 @@ Después de `next`, `$rbp+0x10` y `$rbp+0x18` contienen los mismos valores que `
 
 # Respuestas
 
-> ✏️ Responder las preguntas de la Parte 6 de `GUIA.md`, citando las capturas.
+> ✏️ Responder las preguntas de la Parte 7 de `GUIA.md`, citando las capturas.
 
 ---
 
