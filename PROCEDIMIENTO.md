@@ -11,6 +11,7 @@ Las partes siguen la numeración de [`GUIA.md`](GUIA.md), donde están la teorí
 | 3 | Hello World con la System Table | `HelloPkg/HelloWorld/` |
 | 4 | Hello World con las bibliotecas de EDK2 | `HelloPkg/HelloPrint/` |
 | 5 | Depuración con GDB | `HelloPkg/HelloWorld/` + `scripts/` |
+| 6 | El Hello World en hardware real (bare metal) | los mismos `.efi` + la Shell de `ShellPkg` |
 
 Todas las sesiones de depuración se hicieron con **gdb-dashboard**.
 
@@ -278,7 +279,201 @@ Después de `nexti` sobre el `call`, `OutputString` imprimió `Hello World!` en 
 
 ---
 
+# Parte 6: el Hello World en hardware real (bare metal)
+
+En esta parte llevamos **los mismos `.efi` de las Partes 2 a 4, sin recompilar**, a una notebook real, y los ejecutamos desde la UEFI Shell arrancada desde un pendrive, antes de que exista ningún sistema operativo.
+
+## 6.1 El equipo
+
+![Equipo](capturas/P6-01-equipo.png)
+
+| | |
+|---|---|
+| Equipo | Lenovo Legion (`LAPTOP-JDQ6MDLV`) |
+| Procesador | Intel Core i9-14900HX (x64) |
+| RAM | 32 GB |
+| Disco | SSD NVMe KIOXIA de 1 TB, con Windows |
+| Firmware | **Insyde**, UEFI 2.80 (se ve en 6.6) |
+
+Para compilar y preparar el pendrive usamos Ubuntu en una máquina virtual de VirtualBox, con EDK2 y BaseTools instalados como en la Parte 1. No hizo falta compilar OVMF.
+
+## 6.2 Compilar las apps y la Shell
+
+Las apps son las mismas de siempre (`make app`, target NOOPT). La Shell, en cambio, no la tomamos de OVMF: la compilamos desde `ShellPkg` en **RELEASE**.
+
+```bash
+build -p ShellPkg/ShellPkg.dsc -a X64 -t GCC -b RELEASE
+```
+
+La Shell de OVMF es DEBUG y escribe su log en el puerto de E/S `0x402`. En QEMU ahí está el debugcon, pero en una PC real no sabemos qué hay en ese puerto. La versión RELEASE no escribe nada.
+
+## 6.3 Preparar el pendrive
+
+![USB en VirtualBox](capturas/P6-02-usb-virtualbox.png)
+
+Desde *Dispositivos → USB* de VirtualBox le pasamos el pendrive a la VM, donde aparece como **`USB Disk 20`**. En Ubuntu lo identificamos con `lsblk`: es `sdb`, de 29,3 GB, removible. Lo formateamos en **FAT32**, el sistema de archivos que todo firmware UEFI está obligado a leer, y copiamos los archivos:
+
+![Pendrive](capturas/P6-03-pendrive.png)
+
+```
+/mnt
+├── EFI/BOOT/BOOTX64.EFI     ← la Shell, renombrada
+├── HelloPrint.efi
+├── HelloWorld.efi
+└── SimplestApp.efi
+```
+
+Es la misma estructura que `make run` arma en `disco/` (Parte 2.3): la Shell va en la **ruta por defecto de medios removibles**, `\EFI\BOOT\BOOTX64.EFI`.
+
+## 6.4 BitLocker
+
+![BitLocker](capturas/P6-04-bitlocker.png)
+
+Antes de tocar Secure Boot verificamos BitLocker. Con BitLocker activo, cambiar la configuración de arranque hace que Windows pida la clave de recuperación. `manage-bde -status C:`, en una terminal de administrador, muestra:
+
+| | |
+|---|---|
+| Volumen | `C:` [Windows-SSD], 951,65 GB |
+| Estado de conversión | Descifrado completo (0,0 % cifrado) |
+| Estado de protección | **Protección desactivada** |
+
+El disco no está cifrado, así que se podía seguir sin suspender nada.
+
+## 6.5 Desactivar Secure Boot
+
+![Secure Boot](capturas/P6-05-secureboot-off.jpg)
+
+Entramos al setup del firmware con `shutdown /r /fw /t 0` y, en **Security**, pusimos **Secure Boot → Disabled**.
+
+- **`Secure Boot Status` sigue en `Enabled`** en la misma pantalla. Ese campo muestra con qué configuración arrancó la máquina esta vez; el cambio se aplica recién después de guardar con F10 y reiniciar.
+- `Platform Mode: User Mode` y `Secure Boot Mode: Standard` indican que hay una clave de plataforma (`PK`) instalada y que se usan las claves del fabricante.
+- No tocamos **Reset to Setup Mode**, que borra la `PK`, ni **Restore Factory Keys**, que restaura `PK`, `KEK`, `db` y `dbx`. Son las variables de NVRAM con las que el firmware decide qué imágenes puede ejecutar (pregunta 3).
+
+Con Secure Boot activo, el firmware verifica la firma Authenticode de cada imagen PE/COFF contra los certificados de `db` y la lista negra `dbx`. Nuestra Shell no está firmada, así que la rechazaría.
+
+## 6.6 Arrancar desde el pendrive
+
+![Boot menu](capturas/P6-06-bootmenu.jpg)
+
+Con F12 al encender aparece el boot menu del firmware, con tres opciones:
+
+| Opción | De dónde sale |
+|---|---|
+| `Windows Boot Manager (KXG80ZNV1T02 LS KIOXIA)` | una entrada `Boot####` de la NVRAM, que creó Windows al instalarse, apuntando a su cargador en el disco NVMe |
+| **`EFI USB Device (VendorC ProductCode)`** | el pendrive. No tiene entrada `Boot####`: BDS lo ofrece porque encontró `\EFI\BOOT\BOOTX64.EFI` |
+| `EFI PXE Network (40-C2-BA-9E-73-4C)` | arranque por red; el número es la MAC de la placa de red |
+
+Es el equivalente real del Boot Manager de OVMF que vimos en la Parte 2.3.
+
+![Arranque de la Shell](capturas/P6-07-shell-arranque.jpg)
+
+Al elegir el pendrive arranca la Shell. El encabezado ya muestra la diferencia con QEMU:
+
+```
+UEFI Interactive Shell v2.2
+EDK II
+UEFI v2.80 (INSYDE Corp., 0x77066035)
+```
+
+La Shell sigue siendo de EDK II, porque la compilamos nosotros, pero **el firmware ahora es Insyde** e implementa UEFI 2.80. En QEMU era EDK II (OVMF) con UEFI 2.70. Como el pendrive no tiene `startup.nsh`, la Shell queda en `Shell>` en lugar de pasar sola a `FS0:`.
+
+## 6.7 Los dispositivos según el firmware
+
+![map -r](capturas/P6-08-map.jpg)
+
+`map -r` muestra dos sistemas de archivos y varios dispositivos de bloque. Se distinguen por el *device path*:
+
+| Mapeo | Device path (resumido) | Tamaño | Qué es |
+|---|---|---|---|
+| **`FS0:`** | `Pci(0x14,0x0)/USB(0x2,0x0)/USB(0x0,0x0)/USB(0x1,0x0)/HD(1,MBR,0xF0C9C1A9,0x800,0x3A97800)` | 29,3 GiB | el **pendrive**: controlador USB, tabla **MBR**, como lo formateamos |
+| `FS1:` | `Pci(0x6,0x0)/Pci(0x0,0x0)/NVMe(0x1,...)/HD(1,GPT,AFACF29C-...,0x800,0x82000)` | 260 MiB | la **partición EFI de Windows** (FAT32), en el disco NVMe |
+| `BLK2` | `.../NVMe(0x1,...)` | — | el disco NVMe entero |
+| `BLK4` | `.../HD(2,GPT,...,0x82800,0x8000)` | 16 MiB | partición reservada de Microsoft (MSR) |
+| `BLK5` | `.../HD(3,GPT,...,0x8A800,0x76F4A800)` | 951,65 GiB | la partición de Windows (`C:`) |
+| `BLK6` | `.../HD(4,GPT,...,0x76FD5000,0x3E8000)` | 2000 MiB | partición de recuperación |
+| `BLK0` | `.../USB(0x1,0x0)` | — | el pendrive entero |
+
+Los tamaños salen del último número de `HD(...)`, que es la cantidad de sectores de 512 bytes. Por ejemplo, `0x76F4A800 × 512 = 951,65 GiB`, el mismo tamaño que informó `manage-bde` para `C:` en 6.4. Y `0x3A97800 × 512 = 29,3 GiB`, el tamaño del pendrive en `lsblk`.
+
+Los `BLKx` sin `FSx` son particiones que la Shell no puede leer: NTFS u otros formatos sin driver de sistema de archivos en el firmware. Solo FAT tiene ese driver, por eso solo la partición EFI y el pendrive son `FSx:`. **No entramos a `FS1:`**, para no arriesgar el arranque de Windows.
+
+## 6.8 Ejecutar las apps
+
+![ls](capturas/P6-09-ls.jpg)
+
+En `FS0:`, `ls` muestra el directorio `EFI` y las tres apps con **los mismos tamaños que en QEMU**: `HelloPrint.efi` 32.768 bytes, y `HelloWorld.efi` y `SimplestApp.efi` 28.672 (P2-01). Son los mismos binarios, sin recompilar.
+
+![ver y HelloWorld](capturas/P6-10-ver-helloworld.jpg)
+
+```
+FS0:\> ver
+UEFI Interactive Shell v2.2
+EDK II
+UEFI v2.80 (INSYDE Corp., 0x77066035)
+FS0:\> HelloWorld.efi
+Hello World!
+FS0:\> echo %lasterror%
+0x0
+```
+
+`HelloWorld.efi` imprime `Hello World!` y devuelve `EFI_SUCCESS`, igual que en QEMU (P3-01).
+
+![HelloPrint](capturas/P6-11-helloprint.jpg)
+
+```
+FS0:\> HelloPrint.efi
+Hello World! (via gST)
+Hello World! (via Print)
+Firmware: INSYDE Corp., revision 0x77066035
+UEFI 2.80
+```
+
+**Esta es la prueba más clara de la parte.** El código de `HelloPrint` no cambió, pero lo que imprime sí, porque lee la System Table del firmware que lo ejecuta:
+
+| | QEMU + OVMF (P4-01) | Lenovo Legion (P6-11) |
+|---|---|---|
+| `gST->FirmwareVendor` | `EDK II` | `INSYDE Corp.` |
+| `gST->FirmwareRevision` | `0x00010000` | `0x77066035` |
+| `gST->Hdr.Revision` | UEFI 2.70 | UEFI 2.80 |
+
+## 6.9 Dejar todo como estaba
+
+Después de las pruebas, `reset` en la Shell, sacamos el pendrive y volvimos a poner **Secure Boot → Enabled** en el setup (F10 → Yes). BitLocker no hubo que reanudarlo porque estaba desactivado desde antes (6.4).
+
+---
+
 # Respuestas
+
+## Preguntas de la Parte 6 (bare metal)
+
+**1. ¿Por qué el mismo `HelloWorld.efi` corre sin cambios en OVMF y en el firmware de Insyde?**
+Porque la app no depende de nada propio de OVMF ni del hardware: depende solo de la **especificación UEFI**, que los dos firmwares implementan.
+- El formato es PE/COFF reubicable: cada firmware la carga donde quiere y aplica las reubicaciones de `.reloc`.
+- Recibe la System Table como argumento, en `rdx` según la convención Microsoft x64, que también fija la especificación.
+- Imprime a través del protocolo `ConOut`, que cada firmware implementa con su propio driver de consola.
+
+Los tamaños idénticos en `ls` (P6-09) muestran que es el mismo binario, y `HelloPrint` muestra que lee una System Table distinta: Insyde 2.80 en lugar de EDK II 2.70 (P6-11 frente a P4-01).
+
+**2. ¿Cómo encontró BDS la Shell en el pendrive si no había ninguna entrada `Boot####`?**
+Por la **ruta por defecto de medios removibles**. Para un dispositivo sin opción de arranque propia, la especificación UEFI dice que BDS busque `\EFI\BOOT\BOOTX64.EFI` en su sistema de archivos FAT, y ahí estaba la Shell renombrada (P6-03). Por eso el boot menu ofrece `EFI USB Device` al lado de `Windows Boot Manager`, que sí es una entrada `Boot####` (P6-06). Es el mismo mecanismo que usamos en la Parte 2.3 para que OVMF arrancara la Shell desde `disco/`, donde el log mostraba `[Bds] Expand \EFI\BOOT\BOOTX64.EFI`.
+
+**3. ¿Por qué el firmware rechazaría nuestra Shell con Secure Boot activo, y qué variables intervienen?**
+Con Secure Boot activo, antes de ejecutar una imagen el firmware verifica su firma Authenticode, que va embebida en el PE/COFF. La cadena de confianza se arma con cuatro variables autenticadas de la NVRAM:
+- **`PK`** (*Platform Key*): la clave del dueño de la plataforma, que autoriza cambios en `KEK`.
+- **`KEK`** (*Key Exchange Keys*): las claves que pueden modificar `db` y `dbx`.
+- **`db`**: los certificados y hashes permitidos (en esta máquina, los de Microsoft y Lenovo).
+- **`dbx`**: la lista de imágenes y certificados revocados.
+
+Nuestra Shell y nuestras apps no tienen ninguna firma, así que no coinciden con nada de `db` y el firmware las rechaza. Son las mismas claves que la pantalla de Secure Boot ofrece borrar o restaurar (P6-05). `Platform Mode: User Mode` indica que hay una `PK` instalada y que la verificación está en vigor.
+
+**4. En `map -r`, ¿cómo se distingue el pendrive del disco de Windows?**
+Por el *device path*, que describe el camino físico desde la raíz PCI hasta el dispositivo (P6-08):
+- El pendrive cuelga del controlador USB, `Pci(0x14,0x0)`, con nodos `USB(...)`, y su partición es `HD(1,MBR,...)`, con tabla MBR.
+- El disco de Windows cuelga de `Pci(0x6,0x0)`, con un nodo `NVMe(...)`, y sus particiones son `HD(n,GPT,<GUID>,...)`, con tabla GPT.
+
+Además, el tamaño en sectores confirma cada uno: 29,3 GiB para el pendrive y 951,65 GiB para la partición `C:`, que coincide con `manage-bde` (P6-04).
+
+## Preguntas de la Parte 7
 
 **1. ¿Qué diferencia hay entre UEFI y PI? ¿En qué fase corre nuestra app y por qué todavía puede usar `ConOut`?**
 UEFI es la especificación de la interfaz entre el firmware y los programas que corren sobre él: la System Table, los servicios y los protocolos. PI es la arquitectura interna con la que el firmware se construye desde el reset: SEC, PEI, DXE y BDS. Nuestra app es un consumidor de la interfaz UEFI y corre en BDS, lanzada por la Shell, después de toda la secuencia que vimos en el log (P2-05). Como nadie llamó a `ExitBootServices()`, los Boot Services y los protocolos de consola siguen disponibles.
@@ -321,7 +516,8 @@ La app corre antes que el sistema operativo, con los privilegios del firmware, e
 7. **Depurar una imagen reubicable requiere calcular su dirección.** Base de carga del log + RVA de la sección = dirección para `add-symbol-file`. El control cruzado `EntryPoint − base = _ModuleEntryPoint` confirma la cuenta.
 8. **`UefiMain` no es el verdadero punto de entrada.** El firmware entra por `_ModuleEntryPoint`, que corre los constructores de las bibliotecas y llama a `UefiMain` a través de `ProcessModuleEntryPointList`.
 9. **Usar bibliotecas tiene un costo.** `Print` agrega 4 KiB a la imagen, y la optimización de RELEASE la reduce a menos de la mitad.
-10. **Las lecciones de 2021 necesitaron adaptarse a EDK2 actual.** El toolchain pasó de `GCC5` a `GCC`, hay que declarar `StackCheckLib`, las secciones se alinean a 4 KiB, los submódulos son obligatorios y la Shell ya no arranca sola.
+10. **El mismo binario corre en hardware real.** `HelloWorld.efi` y `HelloPrint.efi` corrieron sin recompilar sobre el firmware Insyde de una Lenovo Legion. `HelloPrint` mostró otro firmware en la misma System Table: `INSYDE Corp.` y UEFI 2.80, en lugar de `EDK II` y UEFI 2.70. Para lograrlo bastó con la ruta por defecto `\EFI\BOOT\BOOTX64.EFI` y con desactivar Secure Boot, porque nuestras imágenes no están firmadas.
+11. **Las lecciones de 2021 necesitaron adaptarse a EDK2 actual.** El toolchain pasó de `GCC5` a `GCC`, hay que declarar `StackCheckLib`, las secciones se alinean a 4 KiB, los submódulos son obligatorios y la Shell ya no arranca sola.
 
 ---
 
