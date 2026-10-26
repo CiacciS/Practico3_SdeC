@@ -72,7 +72,8 @@ practico-3/
 | Parte 3 | Hello World con `SystemTable->ConOut->OutputString` | 2 | terminada |
 | Parte 4 | Hello World con `gST` y `Print` | 2 | terminada |
 | Parte 5 | Depuración con GDB: dirección de carga, símbolos, convención Microsoft x64 y shadow space | 8 | terminada |
-| Parte 6 | Preguntas y conclusiones | — | terminada |
+| Parte 6 | Hello World en hardware real (bare metal): pendrive, Secure Boot y firmware Insyde | 11 | hecha |
+| Parte 7 | Preguntas y conclusiones | — | terminada |
 
 ## Cómo compilar y usar
 
