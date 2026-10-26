@@ -67,12 +67,12 @@ practico-3/
 
 | Parte | Tema | Capturas | Estado |
 |---|---|---|---|
-| Parte 1 | Entorno: EDK2, BaseTools, OVMF DEBUG, QEMU y GDB | 1 | pendiente |
-| Parte 2 | La app mínima, el formato PE/COFF y las fases de arranque en el log | 5 | pendiente |
-| Parte 3 | Hello World con `SystemTable->ConOut->OutputString` | 2 | pendiente |
-| Parte 4 | Hello World con `gST` y `Print` | 2 | pendiente |
-| Parte 5 | Depuración con GDB: dirección de carga, símbolos, convención Microsoft x64 y shadow space | 8 | pendiente |
-| Parte 6 | Preguntas y conclusiones | — | pendiente |
+| Parte 1 | Entorno: EDK2, BaseTools, OVMF DEBUG, QEMU y GDB | 1 | terminada |
+| Parte 2 | La app mínima, el formato PE/COFF y las fases de arranque en el log | 5 | terminada |
+| Parte 3 | Hello World con `SystemTable->ConOut->OutputString` | 2 | terminada |
+| Parte 4 | Hello World con `gST` y `Print` | 2 | terminada |
+| Parte 5 | Depuración con GDB: dirección de carga, símbolos, convención Microsoft x64 y shadow space | 8 | terminada |
+| Parte 6 | Preguntas y conclusiones | — | terminada |
 
 ## Cómo compilar y usar
 

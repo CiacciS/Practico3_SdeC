@@ -731,11 +731,13 @@ prólogo (5.7).
 
 📸 **`P5-04-breakpoint-uefimain`**
 
-> **El panel *Variables* muestra basura, y es lo esperado.** GDB calcula los
-> argumentos como `rbp+0x10` y `rbp+0x18`, pero el prólogo (`push %rbp; mov %rsp,%rbp`)
-> todavía no se ejecutó: `rbp` sigue siendo **el del llamador**. Por ejemplo,
-> `ConOut->OutputString` aparece apuntando a `<_ModuleEntryPoint+91>`, que en realidad
-> es una dirección de retorno del marco de arriba. En la 5.7 se corrige solo.
+> **El panel *Variables* muestra basura, y es lo esperado.** Por la información de
+> depuración (DWARF), GDB sabe que `ImageHandle` y `SystemTable` se guardan en los dos
+> primeros slots del **shadow space**, justo arriba de la dirección de retorno, y los
+> lee de ahí. Pero quien los guarda ahí es el prólogo (`mov %rcx,0x10(%rbp)`,
+> `mov %rdx,0x18(%rbp)`), y todavía no se ejecutó. Esos slots tienen lo que hubiera
+> antes en esa memoria. En la 5.6 se ve con `x/4gx $rsp+8`: son exactamente los
+> valores "basura" que muestra el panel. En la 5.7, después del prólogo, se corrige solo.
 
 > **Si no frena:** la app se cargó en otra dirección. Revisá con
 > `grep "Loading driver" build/debug.log | tail -1` (el log se reescribe en cada
