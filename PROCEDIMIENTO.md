@@ -2,7 +2,7 @@
 
 Este documento registra paso a paso lo que fuimos haciendo, con las capturas que verifican cada resultado. Está pensado para leerse en orden.
 
-Las partes siguen la numeración de [`GUIA.md`](GUIA.md), donde están la teoría y los comandos. Los requisitos del trabajo están en [`CONSIGNA.md`](CONSIGNA.md).
+Las partes siguen la numeración de [`GUIA.md`](GUIA.md), donde están la teoría y los comandos. Dentro de cada parte, los apartados agrupan los pasos de la guía según las capturas, así que su numeración no siempre coincide uno a uno con la de la guía. Los requisitos del trabajo están en [`CONSIGNA.md`](CONSIGNA.md).
 
 | Parte | Tema | Código |
 |---|---|---|
@@ -275,7 +275,7 @@ La System Table se verifica sola:
 
 ![Retorno](capturas/P5-08-retorno.png)
 
-Después de `nexti` sobre el `call`, `OutputString` imprimió `Hello World!` en QEMU y devolvió `rax = 0x0` (`EFI_SUCCESS`), que `UefiMain` guarda en `Status` y devuelve.
+Después de `nexti` sobre el `call`, `rax = 0x0`: `OutputString` devolvió `EFI_SUCCESS`, que `UefiMain` guarda en `Status` y devuelve. En ese momento la terminal de QEMU muestra `Hello World!`, la misma salida de la Parte 3.1, y con `continue` la Shell vuelve al prompt.
 
 ---
 

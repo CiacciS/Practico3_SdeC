@@ -1,6 +1,6 @@
 # Trabajo Práctico N°3.a
 
-## UEFI: Hello World en QEMU y depuración con GDB
+## UEFI: Hello World en QEMU, depuración con GDB y prueba en hardware real
 
 **Una aplicación que corre dentro del firmware, antes que el sistema operativo**
 
@@ -33,6 +33,11 @@ consola) lo hace a través de los **protocolos** que cuelgan de esa tabla. Adem�
 firmware usa otra convención de llamada (**Microsoft x64**, no System V), y la imagen es
 un **PE/COFF reubicable**: su dirección se decide recién al cargarla, lo que obliga a
 calcularla para poder depurar.
+
+Como cierre, llevamos **los mismos `.efi`, sin recompilar**, a una notebook real (Lenovo
+Legion con firmware Insyde) y los ejecutamos desde la UEFI Shell arrancada desde un
+pendrive (Parte 6). La misma app leyó otra System Table: `INSYDE Corp.` y UEFI 2.80, en
+lugar de `EDK II` y UEFI 2.70.
 
 Seguimos el repositorio de referencia [UEFI-Lessons](https://github.com/javierbrk/UEFI-Lessons)
 (lecciones 00 a 04 y 42), adaptado a la versión actual de EDK2, y el documento de la
@@ -101,3 +106,6 @@ make gdb           # terminal 2: GDB con los símbolos y un breakpoint en UefiMa
 ```
 
 Si EDK2 está en otro lado: `make EDK2=/ruta/a/edk2 ...`
+
+Para correrlo en una PC real (pendrive, Secure Boot y Shell compilada desde `ShellPkg`),
+seguir la Parte 6 de [`GUIA.md`](GUIA.md).

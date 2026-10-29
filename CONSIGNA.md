@@ -19,9 +19,10 @@ y ordenada de forma que cada parte dependa solo de la anterior.
 ## Qué pide, en una frase
 
 Escribir una **aplicación UEFI** que imprima "Hello World", hacerla correr sobre un
-firmware UEFI real (**OVMF**) dentro de **QEMU** y **depurarla con GDB**: llegar con un
-breakpoint a su punto de entrada y mostrar cómo recibe los datos del firmware y cómo lo
-llama de vuelta.
+firmware UEFI completo (**OVMF**, construido con EDK2) dentro de **QEMU** y **depurarla
+con GDB**: llegar con un breakpoint a su punto de entrada y mostrar cómo recibe los datos
+del firmware y cómo lo llama de vuelta. Como cierre, ejecutar los mismos binarios en una
+PC real.
 
 Igual que en el TP #2, no alcanza con que el programa ande: lo que se entrega es el
 programa **más la evidencia de que se entiende qué pasa**. Esa evidencia es la sesión de
@@ -36,6 +37,7 @@ GDB de la Parte 5 y la conexión de cada resultado con la teoría del documento 
 | R3 | Que corra en QEMU | Partes 2 a 4: OVMF + UEFI Shell en QEMU, con `disco/` montado como `FS0:` |
 | R4 | Depurarlo | Parte 5: GDB conectado al stub de QEMU, símbolos reubicados, breakpoint en `UefiMain` y seguimiento de la llamada a `OutputString` |
 | R5 | Justificar con la teoría del documento | Parte 0 de `GUIA.md` + las respuestas y conclusiones de `PROCEDIMIENTO.md` |
+| R6 | Correr el Hello World en hardware real (documento adjunto) | Parte 6: los mismos `.efi` en una Lenovo Legion con firmware Insyde, arrancando la Shell desde un pendrive con Secure Boot desactivado |
 
 ## Plan por partes
 
@@ -61,3 +63,6 @@ GDB de la Parte 5 y la conexión de cada resultado con la teoría del documento 
 - **`HelloPkg` vive en nuestro repo**, no adentro de `edk2`, gracias a `PACKAGES_PATH`.
 - **Target `NOOPT`** (`-O0`) para la app que depuramos, por lo mismo que en el TP #2
   usábamos `-O0`: el código generado sigue al fuente línea por línea.
+- **En hardware real, la Shell se compila desde `ShellPkg` en RELEASE.** La de OVMF es
+  DEBUG y escribe su log en el puerto de E/S `0x402`, que en una PC real puede ser
+  cualquier dispositivo. Las apps, en cambio, son las mismas de QEMU, sin recompilar.
